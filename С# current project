@@ -1,0 +1,239 @@
+public partial class Main_menu : Form
+    {
+
+        private int turn = 0;           //0-ход игрока, 1 - ход ИИ
+
+        public int Turn
+        {
+            get =>turn;
+
+            set
+            {
+                turn = value;
+                if (turn>1)
+                {
+                    turn = 0;
+                }
+            }
+        }
+
+        List<IUnit> Allies = new List<IUnit>();
+
+        List<IUnit> Enemies = new List<IUnit>();
+
+        public Main_menu()
+        {
+            InitializeComponent();
+        }
+
+        private void Exit_Click(object sender, EventArgs e)
+        {
+            DialogResult result = MessageBox.Show(
+                "Вы действительно хотите выйти?",
+                "Выход",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1,
+                MessageBoxOptions.DefaultDesktopOnly);
+
+            if (result == DialogResult.Yes)
+                Application.Exit();
+            else
+            {
+                this.TopMost = true;
+            }
+        }
+
+        private void Start_battle()
+        {
+            Current_unit_allie.Visible = true;
+            Current_unit_enemy.Visible = true;
+            Start.Visible = false;
+            Next_turn.Visible = true;
+            Show_army.Visible = true;
+        }
+
+        private void Enter_menu()
+        {
+            Current_unit_allie.Visible = false;
+            Current_unit_enemy.Visible = false;
+            Start.Visible = true;
+            Next_turn.Visible = false;
+            Allies_army.Visible = false;
+            Enemies_army.Visible = false;
+            Show_army.Visible = false;
+        }
+
+        private void Create_Army()
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                Allies.Add(new Heavy_infantry());
+            }
+
+            //for (int i = 0; i < 5; i++)
+            //{
+            //    Allies.Add(new Light_infantry());
+            //}
+
+            //for (int i = 0; i < 2; i++)
+            //{
+            //    Allies.Add(new Bowman());
+            //}
+
+            //for (int i = 0; i < 1; i++)
+            //{
+            //    Allies.Add(new Clearic());
+            //}
+            for (int i = 0; i < 2; i++)
+            {
+                Enemies.Add(new Heavy_infantry());
+            }
+
+            //for (int i = 0; i < 5; i++)
+            //{
+            //    Enemies.Add(new Light_infantry());
+            //}
+
+            //for (int i = 0; i < 2; i++)
+            //{
+            //    Enemies.Add(new Bowman());
+            //}
+
+            //for (int i = 0; i < 1; i++)
+            //{
+            //    Enemies.Add(new Clearic());
+            //}
+        }
+
+        private void Add_at_allies_list(IUnit unit)
+        {
+            Current_unit_allie.Text = unit.ToString();
+        }
+        private void Add_at_enemies_list(IUnit unit)
+        {
+            Current_unit_enemy.Text = unit.ToString();
+        }
+        private void Start_Click(object sender, EventArgs e)
+        {
+            Start_battle();
+            Create_Army();
+            Add_at_allies_list(Allies[0]);
+            Add_at_enemies_list(Enemies[0]);
+        }
+
+        private void Unit_death(IUnit unit)
+        {
+            if (Turn == 0)
+            {
+                Enemies.Remove(unit);
+            }
+            else
+            {
+                Allies.Remove(unit);
+            }
+        }
+
+        private void Make_turn()
+        {
+            if(Turn == 0)
+            {
+                if(Allies[0].Beat(Enemies[0]))
+                {
+                    Unit_death(Enemies[0]);
+                }
+            }
+            else
+            {
+                if (Enemies[0].Beat(Allies[0]))
+                {
+                    Unit_death(Allies[0]);
+                }
+            }
+            Turn++;
+        }
+
+        private void Drawing()
+        {
+            Add_at_allies_list(Allies[0]);
+            Add_at_enemies_list(Enemies[0]);
+        }
+
+        private bool EndGame_Check()
+        {
+            if (Allies.Count==0)
+            {
+                DialogResult result = MessageBox.Show(
+                "Вы проиграли, хотите вернуться в меню?(отказ означает выход из игры)",
+                "Поражение",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1,
+                MessageBoxOptions.DefaultDesktopOnly);
+
+                if (result == DialogResult.Yes)
+                {
+                    this.TopMost = true;
+                    Enter_menu();
+                }                  
+                else
+                {
+                    Application.Exit();
+                    
+                }
+            }
+            if (Enemies.Count == 0)
+            {
+                DialogResult result = MessageBox.Show(
+                "Вы выйграли!! Хотите продолжить победное шествие?(отказ означает выход из игры)",
+                "Победа!!",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1,
+                MessageBoxOptions.DefaultDesktopOnly);
+
+                if (result == DialogResult.Yes)
+                {
+                    this.TopMost = true;
+                    Enter_menu();
+                }
+                else
+                {
+                    Application.Exit();
+
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private void Next_turn_Click(object sender, EventArgs e)
+        {
+            Make_turn();
+            if (EndGame_Check())
+            {
+                Allies.Clear();
+                Enemies.Clear();
+            }
+            else
+            {
+                Drawing();
+            }
+        }
+
+        private void Show_army_Click(object sender, EventArgs e)
+        {
+            Allies_army.Visible = true;
+            Enemies_army.Visible = true;
+            Allies_army.Clear();
+            Enemies_army.Clear();
+            for (int i = 1; i < Allies.Count(); i++)
+            {
+                Allies_army.Text = Allies[i].ToString() + "\r\n";
+            }
+            for (int i = 1; i < Enemies.Count(); i++)
+            {
+                Enemies_army.Text = Enemies[i].ToString() + "\r\n";
+            }
+        }
+    }
