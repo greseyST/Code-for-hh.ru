@@ -1,0 +1,1847 @@
+//Данный класс написан дял игры на движке юнити, поэтому использует некоторые отдельные функции предоставляемые движком, этот код был крайне не оптимизирован, за что заранее извиняюсь.
+
+
+public class Map_Build : MonoBehaviour
+{
+
+    public GameObject field;
+
+    public Field_Data data;
+
+    public Step step;
+
+    List<Patterns.Pattern> Copy_patterns;
+
+    public Patterns patterns;
+
+    public float startPosX;
+
+    public float startPosY;
+
+    public int countX;
+
+    public int countY;
+
+    public float outX;
+
+    public float outY;
+
+    public string objName = "field_";
+
+    private int id;
+
+    public GameObject[,] map;
+
+    public int turn_passed_from_start = 0;
+
+    public List<AI_point> move_map;
+
+    public int assisting_point_x, assisting_point_y;
+
+    public struct AI_point
+    {
+        public int x, y;
+
+        public double koef;
+    }
+
+    public int depth_of_search;
+
+    public int[,] AI_map;
+
+    public int AI_map_size_x;
+
+    public int AI_map_size_y;
+
+    public int AI_map_upper_bound_x, AI_map_upper_bound_y, AI_map_bottom_bound_x, AI_map_bottom_bound_y;
+
+    private bool[,] passed_points;                                 //Массив bool'ов =, нужен для сокращения проходов по точкам, если алгоритм проверки прошел по точке. и не сделал из неё фигуру, то из неё точно не получится другой фигуы на этом ходу
+
+    private List<GameObject> searching_way;                      // Сохранение пути, по которому мы прошли, помогает создать фигуру
+
+    private int start_point_x, start_point_y;                    // Лень разработчика, зачем передавать стартовые координаты точки, если можно сделать их общеклассовыми? (шутка, не делайте так)
+
+    public void Build_Map()
+    {
+        AI_map_size_x = 11;
+        AI_map_size_y = 11;
+        step = new Step();
+        move_map = new List<AI_point>();
+        patterns = new Patterns();
+        Copy_patterns = new List<Patterns.Pattern>();
+        AI_map = new int[AI_map_size_x, AI_map_size_y];
+        id = 0;
+        float posXreset = startPosX;
+        map = new GameObject[countX, countY];
+        passed_points = new bool[countX, countY];
+        for (int y = 0; y < countY; y++)
+        {
+            for (int x = 0; x < countX; x++)
+            {
+                id++;
+
+                map[x, y] = Instantiate(field, new Vector2(startPosX, startPosY), Quaternion.identity) as GameObject;
+                map[x, y].name = objName + id;
+                map[x, y].transform.parent = transform;
+                passed_points[x, y] = false;
+                startPosX += outX;
+            }
+            startPosX = posXreset;
+            startPosY += outY;
+        }
+    }                                   // Постройка карты (не трогать!!)
+
+    private bool CanPlaceField(Transform field)                       //Можно ли разместить точку (пустое ли поле)
+    {
+        if (field.GetChild(0).gameObject.activeInHierarchy)
+            return true;
+        else
+            return false;
+    }
+
+    void Drop_passed_points_Array()
+    {
+        for (int i = 0; i < countX; i++)
+        {
+            for (int j = 0; j < countY; j++)
+            {
+                passed_points[i, j] = false;
+            }
+        }
+    }
+
+    void Copy_Map()                    // Цифровая версия куска карты для работы искусственного интеллекта
+    {
+        AI_map_upper_bound_x = start_point_x + (AI_map_size_x / 2);
+        AI_map_bottom_bound_y = start_point_y - (AI_map_size_x / 2);
+        AI_map_bottom_bound_x = start_point_x - (AI_map_size_y / 2);
+        AI_map_upper_bound_y = start_point_y + (AI_map_size_y / 2);
+        if (AI_map_bottom_bound_x < 0)
+        {
+            AI_map_upper_bound_x = AI_map_upper_bound_x - AI_map_bottom_bound_x;
+            AI_map_bottom_bound_x = 0;
+        }
+        if (AI_map_bottom_bound_y < 0)
+        {
+            AI_map_upper_bound_y = AI_map_upper_bound_y - AI_map_bottom_bound_y;
+            AI_map_bottom_bound_y = 0;
+        }
+        if (AI_map_upper_bound_x > countX - 1)
+        {
+            AI_map_bottom_bound_x = AI_map_bottom_bound_x - (AI_map_upper_bound_x - countX - 1);
+            AI_map_upper_bound_x = countX - 1;
+        }
+        if (AI_map_upper_bound_y > countY - 1)
+        {
+            AI_map_bottom_bound_y = AI_map_bottom_bound_y - (AI_map_upper_bound_y - countY - 1);
+            AI_map_upper_bound_y = countY - 1;
+        }
+        for (int i = AI_map_bottom_bound_x, w = 0; i <= AI_map_upper_bound_x && w < AI_map_size_x; i++, w++)
+        {
+            for (int j = AI_map_bottom_bound_y, z = 0; j <= AI_map_upper_bound_y && z < AI_map_size_y; j++, z++)
+            {
+                //map[i, j].transform.GetChild(3).gameObject.SetActive(true);
+                AI_map[w, z] = Get_Color(map[i, j]);
+            }
+        }
+    }
+
+    int Get_Color(GameObject map)                                                    //Искусственному интеллекту нужно понять, какого цвета точка
+    {
+        if (map.transform.GetChild(0).gameObject.activeInHierarchy) return 0;
+        if (map.transform.GetChild(1).gameObject.activeInHierarchy) return 1;
+        if (map.transform.GetChild(2).gameObject.activeInHierarchy) return 2;
+        if (map.transform.GetChild(4).gameObject.activeInHierarchy) return 2;
+        if (map.transform.GetChild(5).gameObject.activeInHierarchy) return 1;
+        return 0;
+    }
+
+    bool Move_by_Ai_Map()
+    {
+        int i = 0;
+        while (i < move_map.Count && move_map[i].koef > 0)
+        {
+            if (map[move_map[i].x + AI_map_bottom_bound_x, move_map[i].y + AI_map_bottom_bound_y].transform.GetChild(0).gameObject.activeInHierarchy)
+            {
+                Color_Point(move_map[i].x + AI_map_bottom_bound_x, move_map[i].y + AI_map_bottom_bound_y);
+                move_map.RemoveAt(i);
+                return true;
+            }
+            else
+            {
+                move_map.RemoveAt(i);
+            }
+        }
+        return false;
+    }
+    bool Tactic_Move()
+    {
+        while (move_map.Count > 0)
+        {
+            if (map[move_map[move_map.Count / 2].x + AI_map_bottom_bound_x, move_map[move_map.Count / 2].y + AI_map_bottom_bound_y].transform.GetChild(0).gameObject.activeInHierarchy && move_map[move_map.Count / 2].koef >= 0)
+            {
+                Color_Point(move_map[move_map.Count / 2].x + AI_map_bottom_bound_x, move_map[move_map.Count / 2].y + AI_map_bottom_bound_y);
+                move_map.RemoveAt(move_map.Count / 2);
+                return true;
+            }
+            else
+            {
+                move_map.RemoveAt(move_map.Count / 2);
+            }
+        }
+        for (int i = 0; i < countX; i++)
+        {
+            for (int j = 0; j < countY; j++)
+            {
+                if (map[i, j].transform.GetChild(0).gameObject.activeInHierarchy)
+                {
+                    Color_Point(i, j);
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+
+    void Run_AI()
+    {
+        turn_passed_from_start++;
+        if (turn_passed_from_start < depth_of_search)
+        {
+            First_moves();
+            step.index++;
+            return;
+        }
+        if (turn_passed_from_start % depth_of_search != 0)
+        {
+            if (Move_by_Ai_Map())
+            {
+                step.index++;
+                return;
+            }
+            if (Tactic_Move())
+            {
+                step.index++;
+                return;
+            }
+
+        }
+        Copy_Map();
+        Create_move_map();
+        Sort_move_map();
+        if (Move_by_Ai_Map())
+        {
+            step.index++;
+            return;
+        }
+        if (Tactic_Move())
+        {
+            step.index++;
+            return;
+        }
+    }
+
+    void First_moves()
+    {
+        if (turn_passed_from_start == 1)
+        {
+            if (start_point_x > 2)
+            {
+                Color_Point(start_point_x - 2, start_point_y);
+                assisting_point_x = start_point_x; assisting_point_y = start_point_y;
+                return;
+            }
+            else
+            {
+                assisting_point_x = start_point_x - 2; assisting_point_y = start_point_y;
+                Color_Point(start_point_x + 2, start_point_y);
+                return;
+            }
+        }
+        else
+        {
+            if (assisting_point_y < countY - 2)
+            {
+                if (map[assisting_point_x, assisting_point_y + 1].transform.GetChild(0).gameObject.activeInHierarchy)
+                {
+                    Color_Point(assisting_point_x, assisting_point_y + 1);
+                    return;
+                }
+                else
+                {
+                    Color_Point(assisting_point_x, assisting_point_y + 2);
+                    return;
+                }
+            }
+            else
+            {
+                if (map[assisting_point_x, assisting_point_y - 1].transform.GetChild(0).gameObject.activeInHierarchy)
+                {
+                    Color_Point(assisting_point_x, assisting_point_y - 1);
+                    return;
+                }
+                else
+                {
+                    Color_Point(assisting_point_x, assisting_point_y - 2);
+                    return;
+                }
+            }
+        }
+    }
+
+    void Sort_move_map()
+    {
+        for (int i = 0; i < move_map.Count - 1; i++)
+        {
+            for (int j = 0; j < move_map.Count - 1 - i; j++)
+            {
+                if (move_map[j].koef < move_map[j + 1].koef)
+                {
+                    AI_point assist = move_map[j];
+                    move_map[j] = move_map[j + 1];
+                    move_map[j + 1] = assist;
+                }
+            }
+        }
+    }
+    void Create_copy()
+    {
+        Copy_patterns.RemoveRange(0, Copy_patterns.Count);
+        for (int i = 0; i < patterns.Pattern_Complete_List.Count; i++)
+        {
+            Copy_patterns.Add(patterns.Pattern_Complete_List[i]);
+        }
+    }
+    void Create_move_map()
+    {
+        double koef = 0;
+        for (int i = 3; i < AI_map_size_x - 4; i++)                    //Паттерны редко начинаются на граничыные точки, а эта деталь убирает множество граничных случаев
+        {
+            for (int j = 3; j < AI_map_size_y - 4; j++)
+            {
+                if (AI_map[i, j] == 0)
+                {
+                    Create_copy();
+                    Check_point(i, j);
+                    for (int k = 0; k < Copy_patterns.Count; k++)
+                    {
+                        if (Check_pattern(i, j, k))
+                        {
+                            if (koef < Copy_patterns[k].koef)
+                            {
+                                koef = Copy_patterns[k].koef;
+                            }
+                        }
+                    }
+                    move_map.Add(new AI_point { x = i, y = j, koef = koef });
+                    koef = 0;
+                }
+            }
+        }
+
+    }
+    bool Check_pattern(int point_x, int point_y, int pattern_number)
+    {
+        for (int i = point_x - Copy_patterns[pattern_number].start_point_x, w = 0; i < Copy_patterns[pattern_number].map.GetLength(0) + point_x - Copy_patterns[pattern_number].start_point_x && w < Copy_patterns[pattern_number].map.GetLength(0); i++, w++)
+        {
+            for (int j = point_y - Copy_patterns[pattern_number].start_point_y, z = 0; j < Copy_patterns[pattern_number].map.GetLength(1) + point_y - Copy_patterns[pattern_number].start_point_y && z < Copy_patterns[pattern_number].map.GetLength(1); j++, z++)
+            {
+                if (!Check_point_color(w, z, i, j, pattern_number))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    bool Check_point_color(int point_in_pattern_x, int point_in_pattern_y, int point_on_map_x, int point_on_map_y, int pattern_number)
+    {
+        switch (Copy_patterns[pattern_number].map[point_in_pattern_x, point_in_pattern_y])
+        {
+            case 0:
+                if (AI_map[point_on_map_x, point_on_map_y] == 0)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            case 1:
+                if (AI_map[point_on_map_x, point_on_map_y] == 1)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            case 2:
+                if (AI_map[point_on_map_x, point_on_map_y] == 2)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            case 4:
+                if (AI_map[point_on_map_x, point_on_map_y] == 1)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            case 5:
+                if (AI_map[point_on_map_x, point_on_map_y] == 2)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            case 6:
+                {
+                    return true;
+                }
+            case 9:
+                if (AI_map[point_on_map_x, point_on_map_y] == 0)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            default:
+                {
+                    return false;
+                }
+        }
+
+    }
+
+    void Check_point(int x, int y)
+    {
+        for (int i = 0; i < Copy_patterns.Count; i++)
+        {
+            if (x - Copy_patterns[i].start_point_x < 0 || y - Copy_patterns[i].start_point_y < 0 || (Copy_patterns[i].map.GetLength(0) - start_point_x) + x > AI_map_size_x - 1 || (Copy_patterns[i].map.GetLength(1) - start_point_y) + y > AI_map_size_y - 1)
+            {
+                Copy_patterns.RemoveAt(i);
+            }
+
+        }
+    }
+
+    bool Correct_Color(int x, int y)                            //Проверка корректности цвета, в зависимости от хода
+    {
+        switch (step.index)
+        {
+            case 0:
+                if (map[x, y].transform.GetChild(1).gameObject.activeInHierarchy)
+                    return true;
+                else return false;
+            case 1:
+                if (map[x, y].transform.GetChild(2).gameObject.activeInHierarchy)
+                    return true;
+                else return false;
+            default:
+                Debug.Log("Something goes wrong");
+                return false;
+        }
+    }
+
+    void Color_Point(int x, int y)
+    {
+        switch (step.steps[step.index])
+        {
+            case "Ход игрока":
+                if (map[x, y].transform.GetChild(0).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(0).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(1).gameObject.SetActive(true);
+                    return;
+                }
+                if (map[x, y].transform.GetChild(2).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(2).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(5).gameObject.SetActive(true);
+                    return;
+                }
+                if (map[x, y].transform.GetChild(4).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(4).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(1).gameObject.SetActive(true);
+                    return;
+                }
+                return;
+            case "Ход компьютера":
+                if (map[x, y].transform.GetChild(0).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(0).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(2).gameObject.SetActive(true);
+                    return;
+                }
+                if (map[x, y].transform.GetChild(1).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(1).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(4).gameObject.SetActive(true);
+                    return;
+                }
+                if (map[x, y].transform.GetChild(5).gameObject.activeInHierarchy)
+                {
+                    map[x, y].transform.GetChild(5).gameObject.SetActive(false);
+                    map[x, y].transform.GetChild(2).gameObject.SetActive(true);
+                    return;
+                }
+                return;
+            default:
+                Debug.Log("Something goes wrong");
+                return;
+        }
+
+    }
+
+    void Color_a_figure(int x, int y)                                    // Окрашивает фигуру в searching way
+    {
+        Queue<GameObject> points = new Queue<GameObject>();
+        Color_Point(x, y);
+
+        if (!Exist_in_searchig_way(x - 1, y))
+        {
+            Color_Point(x - 1, y);
+            points.Enqueue(map[x - 1, y]);
+            searching_way.Add(map[x - 1, y]);
+        }
+        if (!Exist_in_searchig_way(x + 1, y))
+        {
+            Color_Point(x + 1, y);
+            points.Enqueue(map[x + 1, y]);
+            searching_way.Add(map[x + 1, y]);
+        }
+        if (!Exist_in_searchig_way(x, y + 1))
+        {
+            Color_Point(x, y + 1);
+            points.Enqueue(map[x, y + 1]);
+            searching_way.Add(map[x, y + 1]);
+        }
+        if (!Exist_in_searchig_way(x, y - 1))
+        {
+            Color_Point(x, y - 1);
+            points.Enqueue(map[x, y - 1]);
+            searching_way.Add(map[x, y - 1]);
+        }
+        while (points.Count != 0)
+        {
+            GameObject assist = points.Dequeue();
+            Found_Coord(out x, out y, assist);
+
+            if (!Exist_in_searchig_way(x - 1, y))
+            {
+                Color_Point(x - 1, y);
+                points.Enqueue(map[x - 1, y]);
+                searching_way.Add(map[x - 1, y]);
+            }
+            if (!Exist_in_searchig_way(x + 1, y))
+            {
+                Color_Point(x + 1, y);
+                points.Enqueue(map[x + 1, y]);
+                searching_way.Add(map[x + 1, y]);
+            }
+            if (!Exist_in_searchig_way(x, y + 1))
+            {
+                Color_Point(x, y + 1);
+                points.Enqueue(map[x, y + 1]);
+                searching_way.Add(map[x, y + 1]);
+            }
+            if (!Exist_in_searchig_way(x, y - 1))
+            {
+                Color_Point(x, y - 1);
+                points.Enqueue(map[x, y - 1]);
+                searching_way.Add(map[x, y - 1]);
+            }
+        }
+
+    }
+
+    //void Color_the_Figure()                                // Окрашивает фигуру в searching way (устарело)
+    //{
+    //    for (int i = 0; i < searching_way.Count; i++)
+    //    {
+    //        searching_way[i].transform.GetChild(0).gameObject.SetActive(false);
+    //        searching_way[i].transform.GetChild(1).gameObject.SetActive(false);
+    //        searching_way[i].transform.GetChild(3).gameObject.SetActive(true);
+    //    }
+
+    //}
+
+    bool Need_Check(int x, int y)                            //Нужно ли проверять фигуру (если вокруг нет 2 точек, то фигуры точно не будет, если точек больше 7, то эта точка точно фигуру не создаст)
+    {
+        int count = 0;
+        if (x == 0 || y == 0 || x == countX - 1 || y == countY - 1)
+        {
+            if (x == 0 && y != 0 && y != countY - 1)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (y == 0 && x != 0 && x != countX - 1)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (x == countX - 1 && y != 0 && y != countY - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (y == countY - 1 && x != 0 && x != countX)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (y == 0 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+
+            if (y == 0 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (y == countY - 1 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+            if (y == countY - 1 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j)) count++;
+                    }
+                }
+                return count > 2 && count < 8;
+            }
+        }
+        for (int i = x - 1; i <= x + 1; i++)
+        {
+            for (int j = y - 1; j <= y + 1; j++)
+            {
+                if (Correct_Color(i, j)) count++;
+            }
+        }
+        return count > 2 && count < 8;
+    }
+
+    void Found_Coord(out int x, out int y, GameObject field)       //Нахождение координат только что закрашенной точки
+    {
+        name = field.transform.name;
+        for (int i = 0; i < countX; i++)
+            for (int j = 0; j < countY; j++)
+            {
+                if (map[i, j].name == name)
+                {
+                    x = i;
+                    y = j;
+                    return;
+                }
+            }
+        x = 0;
+        y = 0;
+    }
+
+    void Found_Coord(out int x, out int y, string name)       //Нахождение координат только что закрашенной точки
+    {
+        for (int i = 0; i < countX; i++)
+            for (int j = 0; j < countY; j++)
+            {
+                if (map[i, j].name == name)
+                {
+                    x = i;
+                    y = j;
+                    return;
+                }
+            }
+        x = 0;
+        y = 0;
+    }
+
+    void OnMouseDown()
+    {
+
+
+    }
+
+    bool Exist_in_searchig_way(int x, int y)
+    {
+        for (int i = 0; i <= searching_way.Count - 1; i++)
+        {
+            Found_Coord(out int w, out int z, searching_way[i]);
+            if (w == x && z == y)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool Complete_Figure(ref int x, ref int y)                                  //Фигура должна иметь внутри себя точки, чтобы считаться фигурой
+    {
+        if (x == 0 || y == 0 || x == countX - 1 || y == countY - 1)
+        {
+            if (x == 0 && y != 0 && y != countY - 1)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (y == 0 && x != 0 && x != countX - 1)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (x == countX - 1 && y != 0 && y != countY - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (y == countY - 1 && x != 0 && x != countX)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (y == 0 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+
+            if (y == 0 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (y == countY - 1 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            if (y == countY - 1 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (!Exist_in_searchig_way(i, j))
+                        {
+                            for (int k = i + 1; k < countX; k++)
+                            {
+                                if (Exist_in_searchig_way(k, j))
+                                {
+                                    for (int s = i - 1; s >= 0; s--)
+                                    {
+                                        if (Exist_in_searchig_way(s, j))
+                                        {
+                                            x = i;
+                                            y = j;
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else return false;
+                    }
+                }
+            }
+            for (int i = x - 1; i <= x; i++)
+            {
+                for (int j = y - 1; j <= y; j++)
+                {
+                    if (!Exist_in_searchig_way(i, j))
+                    {
+                        for (int k = i + 1; k < countX; k++)
+                        {
+                            if (Exist_in_searchig_way(k, j))
+                            {
+                                for (int s = i - 1; s >= 0; s--)
+                                {
+                                    if (Exist_in_searchig_way(s, j))
+                                    {
+                                        x = i;
+                                        y = j;
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else return false;
+                }
+            }
+        }
+        for (int i = x - 1; i <= x + 1; i++)
+        {
+            for (int j = y - 1; j <= y + 1; j++)
+            {
+                if (!Exist_in_searchig_way(i, j))
+                {
+                    for (int k = i + 1; k < countX; k++)
+                    {
+                        if (Exist_in_searchig_way(k, j))
+                        {
+                            for (int s = i - 1; s >= 0; s--)
+                            {
+                                if (Exist_in_searchig_way(s, j))
+                                {
+                                    x = i;
+                                    y = j;
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool Figure_Check()                                     //Проверка получившейся у нас фигуры
+    {
+        if (searching_way.Count < 4)
+        {
+            return false;
+        }
+        Found_Coord(out int x, out int y, searching_way[0]);
+        if (!Complete_Figure(ref x, ref y))
+        {
+            return false;
+        }
+        Color_a_figure(x, y);
+        return true;
+    }
+
+
+
+    void Turn_Check(string name)                                //Функция инициализации поиска фигур
+    {
+
+        searching_way.Clear();
+        Drop_passed_points_Array();
+        Found_Coord(out int x, out int y, name);
+        start_point_x = x;
+        start_point_y = y;
+        if (!Need_Check(start_point_x, start_point_y))
+        {
+            step.index++;
+            return;
+        }
+        if (x == 0 || y == 0 || x == countX - 1 || y == countY - 1)
+        {
+            if (x == 0 && y != 0 && y != countY - 1)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (y == 0 && x != 0 && x != countX - 1)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (x == countX - 1 && y != 0 && y != countY - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (y == countY - 1 && x != 0 && x != countX)
+            {
+                for (int i = x - 1; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (y == 0 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+
+            if (y == 0 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y + 1; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (y == countY - 1 && x == 0)
+            {
+                for (int i = x; i <= x + 1; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+            if (y == countY - 1 && x == countX - 1)
+            {
+                for (int i = x - 1; i <= x; i++)
+                {
+                    for (int j = y - 1; j <= y; j++)
+                    {
+                        if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                        {
+                            searching_way.Add(map[i, j]);
+                            if (Searching_alg(i, j))
+                            {
+                                if (Figure_Check())
+                                {
+                                    step.index++;
+                                    Run_AI();
+                                    return;
+                                }
+                            }
+                            searching_way.Clear();
+                        }
+                    }
+                }
+                step.index++;
+                Run_AI();
+                return;
+            }
+        }
+        for (int i = x - 1; i <= x + 1; i++)
+        {
+            for (int j = y - 1; j <= y + 1; j++)
+            {
+                if (Correct_Color(i, j) && i != start_point_x && j != start_point_y)
+                {
+                    searching_way.Add(map[i, j]);
+                    if (Searching_alg(i, j))
+                    {
+                        if (Figure_Check())
+                        {
+                            step.index++;
+                            return;
+                        }
+                    }
+                    searching_way.Clear();
+                }
+            }
+        }
+        step.index++;
+    }
+
+    bool Searching_alg(int x, int y)        //Сам алгоритм проверки
+    {
+        passed_points[x, y] = true;
+        string direction = Direction_from_Start_point(x, y);
+        switch (direction)
+        {
+            case "Up-Right":
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }  //Вверх-вправо
+
+                if (Right(x, y))
+                {
+                    return true;
+                } //Вправо
+
+                if (Up(x, y))
+                {
+                    return true;
+                }  //Вверх
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }  //Вниз-вправо
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                }  //Вверх-влево
+
+                if (Down(x, y))
+                {
+                    return true;
+                }  //Вниз
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Down_Left(x, y))
+                {
+                    return true;
+                } //Вниз-влево
+
+                break;
+
+            case "Right":
+                if (Right(x, y))
+                {
+                    return true;
+                } //Вправо
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }  //Вверх-вправо
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }  //Вниз-вправо
+
+                if (Up(x, y))
+                {
+                    return true;
+                }  //Вверх
+
+                if (Down(x, y))
+                {
+                    return true;
+                }  //Вниз
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                }  //Вверх-влево
+
+                if (Down_Left(x, y))
+                {
+                    return true;
+                } //Вниз-влево
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+                break;
+
+            case "Down-Right":
+                if (Down_Right(x, y))
+                {
+                    return true;
+                } //Вниз-вправо
+
+                if (Down(x, y))
+                {
+                    return true;
+                }  //Вниз
+
+                if (Right(x, y))
+                {
+                    return true;
+                } //Вправо
+
+                if (Down_Left(x, y))
+                {
+                    return true;
+                } //Вниз-влево
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                } //Вверх-вправо
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Up(x, y))
+                {
+                    return true;
+                } //Вверх
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                } //Вверх-влево
+                break;
+
+            case "Down":
+                if (Down(x, y))
+                {
+                    return true;
+                } //Вниз
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                } //Вниз-вправо
+
+                if (Down_Left(x, y))
+                {
+                    return true;
+                } //Вниз-влево
+
+                if (Right(x, y))
+                {
+                    return true;
+                } //Вправо
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }//Вверх-вправо
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                } //Вверх-влево
+
+                if (Up(x, y))
+                {
+                    return true;
+                }  //Вверх
+                break;
+
+            case "Down-Left":
+                if (Down_Left(x, y))
+                {
+                    return true;
+                } //Вниз-влево
+
+                if (Down(x, y))
+                {
+                    return true;
+                } //Вниз
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                } //Вниз-вправо
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                } //Вверх-влево
+
+                if (Right(x, y))
+                {
+                    return true;
+                } //Вправо
+
+                if (Up(x, y))
+                {
+                    return true;
+                } //Вверх
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }//Вверх-вправо
+                break;
+
+            case "Left":
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }   //Вниз-влево
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                }   //Вверх-влево
+
+                if (Down(x, y))
+                {
+                    return true;
+                }   //Вниз
+
+                if (Up(x, y))
+                {
+                    return true;
+                }    //Вверх
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }   //Вниз-вправо
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }    //Вверх-вправо
+
+                if (Right(x, y))
+                {
+                    return true;
+                }    //Вправо
+                break;
+
+            case "Up-Left":
+                if (Up_Left(x, y))
+                {
+                    return true;
+                }   //Вверх-влево
+
+                if (Up(x, y))
+                {
+                    return true;
+                }    //Вверх
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }    //Вверх-вправо
+
+                if (Down_Left(x, y))
+                {
+                    return true;
+                }   //Вниз-влево
+
+                if (Right(x, y))
+                {
+                    return true;
+                }    //Вправо
+
+                if (Down(x, y))
+                {
+                    return true;
+                }   //Вниз
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }   //Вниз-вправо
+                break;
+
+            case "Up":
+                if (Up(x, y))
+                {
+                    return true;
+                }    //Вверх
+
+                if (Up_Right(x, y))
+                {
+                    return true;
+                }    //Вверх-вправо
+
+                if (Up_Left(x, y))
+                {
+                    return true;
+                }   //Вверх-влево
+
+                if (Right(x, y))
+                {
+                    return true;
+                }    //Вправо
+
+                if (Left(x, y))
+                {
+                    return true;
+                }   //Влево
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }   //Вниз-вправо
+
+                if (Down_Right(x, y))
+                {
+                    return true;
+                }   //Вниз-влево
+
+                if (Down(x, y))
+                {
+                    return true;
+                }   //Вниз
+                break;
+
+            case "Start_point":
+                searching_way.Insert(0, map[start_point_x, start_point_y]);
+                searching_way.RemoveAt(searching_way.Count - 1);
+                return true;
+                break;
+
+            case "Something goes wrong":
+                Debug.Log("We don't know, what just happened, but we'll try to find out, sorry for problems");
+                break;
+        }
+
+        return false;
+    }
+
+    bool Up_Right(int x, int y)
+    {
+        if (x == countX - 1 || y == countY - 1)
+        {
+            return false;
+        }
+        if (Correct_Color(x + 1, y + 1) && passed_points[x + 1, y + 1] == false)
+        {
+            searching_way.Add(map[x + 1, y + 1]);
+            if (Searching_alg(x + 1, y + 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                           //Вверх-вправо
+
+    bool Right(int x, int y)
+    {
+        if (x == countX - 1)
+        {
+            return false;
+        }
+        if (Correct_Color(x + 1, y) && passed_points[x + 1, y] == false)
+        {
+            searching_way.Add(map[x + 1, y]);
+            if (Searching_alg(x + 1, y))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                               //Вправо
+
+    bool Down_Right(int x, int y)
+    {
+        if (x == countX - 1 || y == 0)
+        {
+            return false;
+        }
+        if (Correct_Color(x + 1, y - 1) && passed_points[x + 1, y - 1] == false)
+        {
+            searching_way.Add(map[x + 1, y - 1]);
+            if (Searching_alg(x + 1, y - 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                        //Вниз-вправо
+
+    bool Down(int x, int y)
+    {
+        if (y == 0)
+        {
+            return false;
+        }
+        if (Correct_Color(x, y - 1) && passed_points[x, y - 1] == false)
+        {
+            searching_way.Add(map[x, y - 1]);
+            if (Searching_alg(x, y - 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                             //Вниз
+
+    bool Down_Left(int x, int y)
+    {
+        if (x == 0 || y == 0)
+        {
+            return false;
+        }
+        if (Correct_Color(x - 1, y - 1) && passed_points[x - 1, y - 1] == false)
+        {
+            searching_way.Add(map[x - 1, y - 1]);
+            if (Searching_alg(x - 1, y - 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                       //Вниз-влево
+
+    bool Left(int x, int y)
+    {
+        if (x == 0)
+        {
+            return false;
+        }
+        if (Correct_Color(x - 1, y) && passed_points[x - 1, y] == false)
+        {
+            searching_way.Add(map[x - 1, y]);
+            if (Searching_alg(x - 1, y))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                           //Влево
+
+    bool Up_Left(int x, int y)
+    {
+        if (x == 0 || y == countY - 1)
+        {
+            return false;
+        }
+        if (Correct_Color(x - 1, y + 1) && passed_points[x - 1, y + 1] == false)
+        {
+            searching_way.Add(map[x - 1, y + 1]);
+            if (Searching_alg(x - 1, y + 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                        //Вверх-влево
+
+    bool Up(int x, int y)
+    {
+        if (y == countY - 1)
+        {
+            return false;
+        }
+        if (Correct_Color(x, y + 1) && passed_points[x, y + 1] == false)
+        {
+            searching_way.Add(map[x, y + 1]);
+            if (Searching_alg(x, y + 1))
+            {
+                return true;
+            }
+            searching_way.RemoveAt(searching_way.Count - 1);
+        }
+        return false;
+    }                                //Вверх
+
+    string Direction_from_Start_point(int x, int y)
+    {
+        if (x > start_point_x && y > start_point_y) return "Up-Right";
+
+        if (x > start_point_x && y == start_point_y) return "Right";
+
+        if (x > start_point_x && y < start_point_y) return "Down-Right";
+
+        if (x == start_point_x && y < start_point_y) return "Down";
+
+        if (x < start_point_x && y < start_point_y) return "Down-Left";
+
+        if (x < start_point_x && y == start_point_y) return "Left";
+
+        if (x < start_point_x && y > start_point_y) return "Up-Left";
+
+        if (x == start_point_x && y > start_point_y) return "Up";
+
+        if (x == start_point_x && y == start_point_y) return "Start_point";
+
+        return "Something goes wrong";
+    }
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        Build_Map();
+        searching_way = new List<GameObject>();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (Input.GetButtonDown("Fire1"))
+        {
+            if (step.index != 0)
+            {
+                Debug.Log("Not yours turn"); //TODO: сделать подсказки
+                return;
+            }
+            RaycastHit hit;
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out hit))
+            {
+                Transform objectHit = hit.transform;
+                string name = objectHit.name;
+                if (CanPlaceField(objectHit))
+                {
+
+                    hit.transform.GetChild(0).gameObject.SetActive(false);
+                    hit.transform.GetChild(1).gameObject.SetActive(true);
+                    Turn_Check(name);
+                    Run_AI();
+                }
+                else
+                    Debug.Log(name + " is already checked"); //TODO: сделать подсказки
+
+            }
+        }
+        if (Input.GetButtonDown("Cancel"))
+        {
+            Application.Quit();
+        }
+    }
